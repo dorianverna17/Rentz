@@ -16,10 +16,21 @@ input,select{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid va
 .b:disabled{opacity:.4}
 table{border-collapse:collapse;width:100%;margin:8px 0}th,td{padding:3px 8px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
 tr.sel{background:var(--hi);font-weight:600}
-.c{display:inline-block;min-width:40px;padding:7px 4px;margin:2px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);text-align:center;font:600 15px system-ui}
-.rd{color:var(--rd)}
-button.c:not(:disabled){border-color:var(--acc);box-shadow:0 0 0 1px var(--acc);cursor:pointer}button.c:disabled{opacity:.45}
+.c{position:relative;display:inline-block;vertical-align:top;width:52px;height:74px;margin:3px;padding:0;overflow:hidden;border:1px solid #9a9a9a;border-radius:7px;background:#fff;color:#1a1a1a;box-shadow:0 1px 3px rgba(0,0,0,.3);font:600 14px/1 system-ui,sans-serif}
+.c.rd{color:#c0392b}
+.c i{position:absolute;left:5px;top:4px;font-style:normal;text-align:center;line-height:1.1}
+.c i.br{left:auto;top:auto;right:5px;bottom:4px;transform:rotate(180deg)}
+.c b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:400}
+button.c:disabled{opacity:.5;filter:grayscale(.4)}
+button.c:not(:disabled){border:2px solid var(--acc);cursor:pointer;transition:transform .1s}
+button.c:not(:disabled):hover{transform:translateY(-6px)}
+#hand{padding-top:8px}
+.row{display:flex;align-items:center;padding-right:20px;margin:2px 0}
+#tbl .c{width:40px;height:56px;font-size:11px;margin:2px}#tbl .c b{font-size:22px}#tbl .c i{left:3px;top:3px}#tbl .c i.br{left:auto;top:auto;right:3px;bottom:3px}
+.row .c{margin-right:-20px}
+.g{background:transparent;color:var(--fg);border:1px solid var(--line)}
 .slots{display:grid;grid-template-columns:repeat(4,1fr);text-align:center;gap:4px}
+#pick{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0}
 #tbl{min-height:96px;background:var(--hi);border-radius:10px;padding:8px;margin:8px 0}
 #gate{position:fixed;inset:0;background:var(--bg);z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 #gate[hidden]{display:none}
@@ -38,17 +49,19 @@ button.c:not(:disabled){border-color:var(--acc);box-shadow:0 0 0 1px var(--acc);
  <p id="status" class="s"></p></div>
 <div id="game" hidden>
  <div id="hdr"></div><table id="sc"></table><div id="tbl"></div><div id="pick"></div>
- <p id="msg"></p><div id="hand"></div><div id="again"></div></div>
+ <p id="msg"></p><div id="hand"></div><div class="bar"><button class="b" id="pass" disabled>Pass</button></div><div id="again"></div><div class="bar"><button class="b g" id="quit"></button></div></div>
 <div id="gate" hidden></div>
 <script>
 // ===== ENGINE (no DOM dependency) =====
 const SUITS=['♣','♦','♥','♠'],RL={11:'J',12:'Q',13:'K',14:'A'};
 const cs=c=>(RL[c.r]||c.r)+SUITS[c.s];
 // Default scoring – tweak to match your house rules.
-const SC={kings:-10,queens:-5,diamonds:-5,tenClubs:-20,tricks:-5,whist:10,rentz:[60,30,10,0]};
-const CONTRACTS=['kings','queens','diamonds','tenClubs','tricks','totals','whist','rentz'];
-const NAMES={kings:'Kings',queens:'Queens',diamonds:'Diamonds',tenClubs:'10 of Clubs',tricks:'Tricks',totals:'Totals',whist:'Whist (+)',rentz:'Rentz (+)'};
-const EXPECT={kings:-40,queens:-20,diamonds:-40,tenClubs:-20,tricks:-40,totals:-160,whist:80,rentz:100}; // per-deal score sums
+const SC={kingHearts:-40,queens:-5,diamonds:-5,tenClubs:-20,tricks:-5,whist:10,rentz:[60,30,10,0]};
+// Single-card contracts end as soon as the card is taken.
+const STOP={kingHearts:c=>c.r===13&&c.s===2,tenClubs:c=>c.r===10&&c.s===0};
+const CONTRACTS=['kingHearts','queens','diamonds','tenClubs','tricks','totals','whist','rentz'];
+const NAMES={kingHearts:'King of Hearts',queens:'Queens',diamonds:'Diamonds',tenClubs:'10 of Clubs',tricks:'Tricks',totals:'Totals',whist:'Whist (+)',rentz:'Rentz (+)'};
+const EXPECT={kingHearts:-40,queens:-20,diamonds:-40,tenClubs:-20,tricks:-40,totals:-160,whist:80,rentz:100}; // per-deal score sums
 function rng(seed){let a=seed>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function deck(){const d=[];for(let s=0;s<4;s++)for(let r=7;r<=14;r++)d.push({s,r});return d}
 function shuffle(a,R){for(let i=a.length-1;i>0;i--){const j=Math.floor(R()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -64,7 +77,7 @@ class Deal{
   legal(){
     const h=this.hands[this.turn];
     if(this.rentz){
-      if(this.open===null)return h.slice();
+      if(this.open===null){const j=h.filter(c=>c.r===11);return j.length?j:[null]} // only a J can start; no J = pass
       const m=h.filter(c=>{const L=this.layout[c.s];return L?(c.r===L.hi+1||c.r===L.lo-1):c.r===this.open});
       return m.length?m:[null];
     }
@@ -92,7 +105,7 @@ class Deal{
     this.log.push(`→ P${w.p+1} wins the trick`);
     this.trick=[];this.nTricks++;this.turn=w.p;
   }
-  over(){return this.rentz?this.out!==null:this.nTricks===8}
+  over(){return this.rentz?this.out!==null:this.nTricks===8||(!!STOP[this.k]&&this.won.some(w=>w.some(STOP[this.k])))}
   score(){
     const s=[0,0,0,0];
     if(this.rentz){ // first out = 1st; the rest ranked by fewest cards left; ties share points
@@ -103,9 +116,9 @@ class Deal{
     }
     for(let p=0;p<4;p++){
       const w=this.won[p],cnt=f=>w.filter(f).length,t=w.length/4;
-      const K=cnt(c=>c.r===13)*SC.kings,Q=cnt(c=>c.r===12)*SC.queens,D=cnt(c=>c.s===1)*SC.diamonds,
+      const K=cnt(c=>c.r===13&&c.s===2)*SC.kingHearts,Q=cnt(c=>c.r===12)*SC.queens,D=cnt(c=>c.s===1)*SC.diamonds,
             T=cnt(c=>c.s===0&&c.r===10)*SC.tenClubs,R=t*SC.tricks;
-      s[p]={kings:K,queens:Q,diamonds:D,tenClubs:T,tricks:R,whist:t*SC.whist,totals:K+Q+D+T+R}[this.k];
+      s[p]={kingHearts:K,queens:Q,diamonds:D,tenClubs:T,tricks:R,whist:t*SC.whist,totals:K+Q+D+T+R}[this.k];
     }
     return s;
   }
@@ -120,7 +133,8 @@ const randomBot={
 
 // ===== MATCH (host-authoritative; runs on the host's device) =====
 const $=id=>document.getElementById(id),ck=c=>c.s+'-'+c.r,red=c=>c.s===1||c.s===2;
-const cardH=c=>`<span class="c ${red(c)?'rd':''}">${cs(c)}</span>`;
+const face=c=>{const r=RL[c.r]||c.r,x=SUITS[c.s];return`<i>${r}<br>${x}</i><b>${x}</b><i class="br">${r}<br>${x}</i>`};
+const cardH=c=>`<span class="c ${red(c)?'rd':''}">${face(c)}</span>`;
 class Match{
   constructor(seats,n,cb){this.seats=seats;this.n=n;this.cb=cb;this.R=Math.random;this.d=-1;this.tot=[0,0,0,0];this.hist=[];
     this.left=[0,1,2,3].map(()=>CONTRACTS.slice())}
@@ -130,7 +144,7 @@ class Match{
     this.g=null;this.res=null;this.last=null;this.phase='choose';this.cb();this.sched()}
   actor(){return this.phase==='choose'?this.caller:this.g.turn}
   sched(delay=700){clearTimeout(this.t);if(this.phase==='over'||this.phase==='dealover')return;
-    const auto=this.seats[this.actor()].type==='bot'||(this.phase==='play'&&this.g.legal()[0]===null);
+    const auto=this.seats[this.actor()].type==='bot'; // bots pass by themselves; humans press Pass
     if(auto)this.t=setTimeout(()=>this.auto(),delay)}
   auto(){const a=this.actor();
     if(this.phase==='choose')return this.choose(a,randomBot.choose(this.left[a],this.R));
@@ -196,10 +210,20 @@ function join(){if(!NET)return status('Online play needs the PeerJS script (bloc
   const code=$('code').value.toUpperCase().trim();if(!code)return;mode='guest';status('Connecting…');
   peer=new Peer();peer.on('error',e=>status('Network error: '+e.type));
   peer.on('open',()=>{conn=peer.connect('rentz-gh-'+code,{reliable:true});
-    conn.on('open',()=>{conn.send({t:'hello',name:$('name').value||'Guest'});status('Connected. Waiting for the host to start…')});
-    conn.on('data',m=>{if(m.t==='view')render(m.v,false);else if(m.t==='lobby')status('Players: '+m.names.join(', '));else if(m.t==='full')status('That room is full.')});
+    conn.on('open',()=>{$('home').hidden=true;conn.send({t:'hello',name:$('name').value||'Guest'});status('Connected. Waiting for the host to start…')});
+    conn.on('data',m=>{if(m.t==='view')render(m.v,false);else if(m.t==='lobby')status('Players: '+m.names.join(', '));else if(m.t==='full')status('That room is full.');else if(m.t==='cancel'){$('game').hidden=true;$('lobby').hidden=false;status('The host cancelled the game. Waiting for a new one…')}});
     conn.on('close',()=>status('Disconnected from host. Reload to rejoin.'))})}
 function act(a){if(mode==='guest')return conn&&conn.send({t:'act',a});a.t==='choose'?M.choose(ds,a.k):M.move(ds,a.key)}
+
+function quit(){
+  if(mode==='guest'){if(!confirm('Leave this game? A bot will take your seat.'))return;
+    try{conn.close();peer.destroy()}catch(e){}
+    conn=null;peer=null;mode='';$('game').hidden=true;$('lobby').hidden=false;$('home').hidden=false;status('You left the game.');return}
+  if(!confirm('Cancel the game for everyone?'))return;
+  clearTimeout(M.t);clearTimeout(M.t2);M=null;gate=false;
+  seats.forEach(s=>{if(s.conn)try{s.conn.send({t:'cancel'})}catch(e){}});
+  $('game').hidden=true;$('gate').hidden=true;$('lobby').hidden=false;lobbyPush();
+  status('Game cancelled. Adjust the seats and press Start for a new one.')}
 
 // ===== RENDER =====
 function render(v,g){
@@ -210,7 +234,7 @@ function render(v,g){
   $('sc').innerHTML='<tr><th>Player<th>Cards'+(v.tricks?'<th>Tricks':'')+'<th>Total</tr>'+
     N.map((n,i)=>`<tr${i===act_&&v.phase!=='over'?' class="sel"':''}><td>${i===v.seat?'★ ':''}${n}<td>${v.counts[i]}${v.tricks?`<td>${v.tricks[i]}`:''}<td>${tl(v.tot[i])}`).join('');
   let t='';
-  if(v.layout)t=`<div class="s">Open rank: ${RL[v.open]||v.open}</div>`+[0,1,2,3].map(s=>{const L=v.layout[s];let r='';if(L)for(let x=L.lo;x<=L.hi;x++)r+=cardH({s,r:x});return`<div>${SUITS[s]} ${r}</div>`}).join('');
+  if(v.layout)t=`<div class="s">${v.open===null?'Only a J can start. Players without a J pass; the other suits then start with their J.':'Opening rank: '+(RL[v.open]||v.open)}</div>`+[0,1,2,3].map(s=>{const L=v.layout[s];let r='';if(L)for(let x=L.lo;x<=L.hi;x++)r+=cardH({s,r:x});return`<div class="row">${r||`<span class="s">${SUITS[s]} –</span>`}</div>`}).join('');
   else if(v.k){const cur=v.trick&&v.trick.length,tr=cur?v.trick:(v.last?v.last.trick:[]);
     t='<div class="slots">'+N.map((n,i)=>{const x=tr.find(q=>q.p===i);return`<div>${n}<br>${x?cardH(x.c):'–'}</div>`}).join('')+'</div>'+(!cur&&v.last?`<div class="s">${N[v.last.winner]} took the trick</div>`:'')}
   else t='<div class="s">Waiting for the contract…</div>';
@@ -220,18 +244,20 @@ function render(v,g){
   if(v.phase==='over'){const mx=Math.max(...v.tot);m='<b>Match over.</b> Winner: '+N.filter((n,i)=>v.tot[i]===mx).join(' & ')}
   else if(v.phase==='dealover')m=`<b>${NAMES[v.res.k]}:</b> `+N.map((n,i)=>`${n} ${tl(v.res.s[i])}`).join(', ')+' (next deal soon…)';
   else if(v.phase==='choose')m=v.left?'<b>Your call:</b> pick a contract (you have your cards below).':`${N[v.caller]} is choosing a contract…`;
-  else m=v.legal?'<b>Your turn</b>':`${N[v.turn]} to play…`;
+  else m=v.legal?(v.legal[0]===null?'<b>You have no playable card.</b> Press Pass.':'<b>Your turn</b>'):`${N[v.turn]} to play…`;
   $('msg').innerHTML=m;
-  $('hand').innerHTML=v.hand.map(c=>`<button class="c ${red(c)?'rd':''}" data-k="${ck(c)}"${v.legal&&v.legal.includes(ck(c))?'':' disabled'}>${cs(c)}</button>`).join('');
+  $('hand').innerHTML=v.hand.map(c=>`<button class="c ${red(c)?'rd':''}" data-k="${ck(c)}"${v.legal&&v.legal.includes(ck(c))?'':' disabled'}>${face(c)}</button>`).join('');
+  $('pass').disabled=!(v.legal&&v.legal[0]===null);
   $('again').innerHTML=v.phase==='over'&&mode==='host'?'<button class="b" id="na">New match</button>':'';
-  if($('na'))$('na').onclick=start}
+  if($('na'))$('na').onclick=start;
+  $('quit').textContent=mode==='guest'?'Leave game':'Cancel game'}
 $('pick').onclick=e=>{const k=e.target.dataset.k;if(k)act({t:'choose',k})};
 $('hand').onclick=e=>{const b=e.target.closest('[data-k]');if(b&&!b.disabled)act({t:'play',key:b.dataset.k})};
 
 // ===== LOBBY WIRING =====
 $('bh').onclick=()=>{if(!NET)return status('Online play needs the PeerJS script, which is blocked in this preview. Use it from GitHub Pages.');mode='host';mkSeats();hostNet();showCfg()};
 $('bl').onclick=()=>{mode='host';peer=null;mkSeats();showCfg()};
-$('bj').onclick=join;$('bs').onclick=start;
+$('quit').onclick=quit;$('pass').onclick=()=>act({t:'play',key:null});$('bj').onclick=join;$('bs').onclick=start;
 if(location.hash.length>1)$('code').value=location.hash.slice(1);
 if(!NET)status('Online play is unavailable here (PeerJS not loaded). Local play still works.');
 </script></main></body></html>
