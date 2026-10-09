@@ -35,7 +35,6 @@ button.c:not(:disabled):hover{transform:translateY(-6px)}
 #gate{position:fixed;inset:0;background:var(--bg);z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 #gate[hidden]{display:none}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head><body><main>
 <h1>Rentz</h1>
 <div id="lobby">
@@ -170,7 +169,8 @@ class Match{
 }
 
 // ===== NETWORK / SESSION =====
-const NET=typeof Peer!=='undefined';
+const DB='https://verian-5bbb7-default-rtdb.europe-west1.firebasedatabase.app';
+const NET=typeof EventSource!=='undefined'&&typeof fetch!=='undefined';
 let M=null,seats=[],peer=null,conn=null,mode='',ds=0,gate=false;
 const status=t=>$('status').textContent=t;
 const mkSeats=()=>{seats=[{kind:'host',name:($('name').value||'Host').slice(0,16)},...[1,2,3].map(i=>({kind:'bot',name:'Player '+(i+1)}))]};
@@ -180,25 +180,61 @@ function lobbyUI(){
     `<div>Seat ${i+1}: <select data-i="${i}"><option value="bot">Bot</option>${peer?'<option value="remote">Online player</option>':''}<option value="local">Same device</option></select> ${s.kind==='remote'?(s.conn?'✔ '+s.name:'waiting…'):''}</div>`).join('');
   $('seatsel').querySelectorAll('select').forEach(sel=>{const s=seats[sel.dataset.i];sel.value=s.kind;
     sel.onchange=()=>{s.kind=sel.value;s.name='Player '+(+sel.dataset.i+1);if(s.kind!=='remote'&&s.conn){const c=s.conn;s.conn=null;c.close()}lobbyPush()}})}
-function lobbyPush(){lobbyUI();const names=seats.map(s=>s.kind==='bot'?'Bot':s.kind==='remote'&&!s.conn?'(open)':s.name);
-  seats.forEach(s=>{if(s.conn)try{s.conn.send({t:'lobby',names})}catch(e){}})}
-function hostNet(){const code=Math.random().toString(36).slice(2,7).toUpperCase();
-  peer=new Peer('rentz-gh-'+code);
-  peer.on('open',()=>{$('share').innerHTML=`Room code <b>${code}</b> · invite link <input readonly size="34" value="${location.href.split('#')[0]}#${code}" onclick="this.select()">`;lobbyUI()});
-  peer.on('connection',onConn);peer.on('error',e=>status('Network error: '+e.type))}
-function onConn(c){
-  c.on('data',m=>{
-    if(m.t==='hello'){const i=seats.findIndex(s=>s.kind==='remote'&&!s.conn);
-      if(i<0){c.send({t:'full'});setTimeout(()=>c.close(),300);return}
-      seats[i].conn=c;seats[i].name=String(m.name||'Player').slice(0,16);c._i=i;c.send({t:'seat',seat:i});
-      if(M){M.seats[i]={name:seats[i].name,type:'human'};push();M.sched()}else lobbyPush()}
-    else if(m.t==='act'&&M&&c._i!==undefined&&m.a){const a=m.a;a.t==='choose'?M.choose(c._i,a.k):M.move(c._i,a.key===undefined?null:a.key)}});
-  c.on('close',()=>{const i=c._i;if(i===undefined||seats[i].conn!==c)return;seats[i].conn=null;
-    if(M){M.seats[i]={name:'Bot '+(i+1),type:'bot'};push();M.sched()}else lobbyPush()})}
+// Online play: the host's browser runs the game; moves travel through Firebase Realtime Database (REST + EventSource, no SDK).
+// Every value is stored as a JSON string so Firebase cannot drop nulls or empty arrays.
+const FB=(m,p,b)=>fetch(`${DB}/${p}.json`,{method:m,body:b===undefined?undefined:JSON.stringify(b)}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()});
+const Q={},fbq=(p,b)=>Q[p]=(Q[p]||Promise.resolve()).catch(()=>{}).then(()=>FB('PUT',p,b)); // per-path queue keeps writes in order
+let room='',cid='',streams=[],timers=[],clients={},known={},bt={};
+const stopAll=()=>{streams.forEach(e=>e.close());timers.forEach(clearInterval);streams=[];timers=[]};
+function stream(p,fn){let tree=null;const es=new EventSource(`${DB}/${p}.json`);
+  const setAt=(path,val)=>{if(path==='/'){tree=val;return}
+    const ks=path.split('/').filter(Boolean);if(tree===null||typeof tree!=='object')tree={};let o=tree;
+    for(let i=0;i<ks.length-1;i++){if(o[ks[i]]===null||typeof o[ks[i]]!=='object')o[ks[i]]={};o=o[ks[i]]}
+    const l=ks[ks.length-1];if(val===null)delete o[l];else o[l]=val};
+  es.addEventListener('put',e=>{const m=JSON.parse(e.data);setAt(m.path,m.data);fn(tree)});
+  es.addEventListener('patch',e=>{const m=JSON.parse(e.data);for(const[k,v]of Object.entries(m.data||{}))setAt((m.path==='/'?'':m.path)+'/'+k,v);fn(tree)});
+  streams.push(es);return es}
+function writeLobby(){if(!room||mode!=='host')return;
+  fbq(`rooms/${room}/lobby`,{n:JSON.stringify(seats.map(s=>s.kind==='bot'?'Bot':s.kind==='remote'&&!s.conn?'(open)':s.name)),ts:Date.now(),playing:!!M})}
+function lobbyPush(){lobbyUI();writeLobby()}
+function mkConn(id){return{cid:id,
+  send(m){if(m.t==='view')fbq(`rooms/${room}/views/${this._i}`,JSON.stringify(m.v));
+    else if(m.t==='seat')fbq(`rooms/${room}/assign/${id}`,m.seat);
+    else if(m.t==='full')fbq(`rooms/${room}/assign/${id}`,-1)},
+  close(){delete clients[id];fbq(`rooms/${room}/assign/${id}`,-1)}}}
+function onHello(id,name){
+  const c=mkConn(id),i=seats.findIndex(s=>s.kind==='remote'&&!s.conn);
+  if(i<0){c.send({t:'full'});return}
+  c._i=i;clients[id]=c;bt[id]={v:undefined,at:Date.now()};seats[i].conn=c;seats[i].name=name;c.send({t:'seat',seat:i});
+  if(M){M.seats[i]={name,type:'human'};push();M.sched()}else lobbyPush()}
+function hostGone(c){const i=c._i;delete clients[c.cid];delete bt[c.cid];
+  if(i===undefined||seats[i].conn!==c)return;seats[i].conn=null;
+  if(M){M.seats[i]={name:'Bot '+(i+1),type:'bot'};push();M.sched()}else lobbyPush()}
+async function hostNet(){
+  peer=true;
+  try{let code;for(let k=0;k<5;k++){code=Math.random().toString(36).slice(2,7).toUpperCase();if(!(await FB('GET',`rooms/${code}/lobby`)))break}
+    room=code;clients={};known={};bt={};
+    await fbq(`rooms/${room}/lobby`,{n:'[]',ts:Date.now(),playing:false});
+    $('share').innerHTML=`Room code <b>${code}</b> · invite link <input readonly size="34" value="${location.href.split('#')[0]}#${code}" onclick="this.select()">`;
+    lobbyPush();
+    stream(`rooms/${room}/hello`,t=>{const cur=t&&typeof t==='object'?t:{};
+      for(const[id,v]of Object.entries(cur))if(!known[id]){known[id]=1;onHello(id,String((v&&v.name)||'Player').slice(0,16))}
+      for(const id of Object.keys(known))if(!(id in cur)){delete known[id];if(clients[id])hostGone(clients[id])}});
+    const done={};
+    stream(`rooms/${room}/acts`,t=>{if(!t||typeof t!=='object')return;
+      for(const[k,v]of Object.entries(t)){if(done[k])continue;done[k]=1;FB('DELETE',`rooms/${room}/acts/${k}`).catch(()=>{});
+        const c=v&&clients[v.cid];if(!c||!M)continue;
+        try{const a=JSON.parse(v.s);a.t==='choose'?M.choose(c._i,a.k):M.move(c._i,a.key===undefined?null:a.key)}catch(e){}}});
+    // heartbeat: refresh the lobby timestamp, and drop guests whose beat stopped changing for 25s
+    timers.push(setInterval(async()=>{writeLobby();
+      try{const b=(await FB('GET',`rooms/${room}/beat`))||{},now=Date.now();
+        for(const id of Object.keys(clients)){const x=bt[id]||(bt[id]={v:undefined,at:now});if(b[id]!==x.v){x.v=b[id];x.at=now}
+          if(now-x.at>25000)hostGone(clients[id])}}catch(e){}},5000));
+  }catch(e){status('Network error: could not reach the game database. ('+e.message+')')}}
 function start(){
   if(M){clearTimeout(M.t);clearTimeout(M.t2)}
   const ms=seats.map((s,i)=>{const h=s.kind==='host'||s.kind==='local'||(s.kind==='remote'&&s.conn);return{name:h?s.name:'Bot '+(i+1),type:h?'human':'bot'}});
-  M=new Match(ms,+$('nd').value,push);ds=0;gate=false;M.next()}
+  M=new Match(ms,+$('nd').value,push);ds=0;gate=false;writeLobby();M.next()}
 const isLocal=i=>seats[i].kind==='host'||seats[i].kind==='local';
 function push(){
   seats.forEach((s,i)=>{if(s.conn&&M.seats[i].type==='human')try{s.conn.send({t:'view',v:M.view(i)})}catch(e){}});
@@ -206,24 +242,40 @@ function push(){
   const a=M.phase==='choose'?M.caller:(M.g&&M.phase==='play'?M.g.turn:null);
   if(a!==null&&locals.includes(a)&&a!==ds){gate=locals.length>1;ds=a}
   render(M.view(ds),gate)}
-function join(){if(!NET)return status('Online play needs the PeerJS script (blocked here).');
-  const code=$('code').value.toUpperCase().trim();if(!code)return;mode='guest';status('Connecting…');
-  peer=new Peer();peer.on('error',e=>status('Network error: '+e.type));
-  peer.on('open',()=>{conn=peer.connect('rentz-gh-'+code,{reliable:true});
-    conn.on('open',()=>{$('home').hidden=true;conn.send({t:'hello',name:$('name').value||'Guest'});status('Connected. Waiting for the host to start…')});
-    conn.on('data',m=>{if(m.t==='view')render(m.v,false);else if(m.t==='lobby')status('Players: '+m.names.join(', '));else if(m.t==='full')status('That room is full.');else if(m.t==='cancel'){$('game').hidden=true;$('lobby').hidden=false;status('The host cancelled the game. Waiting for a new one…')}});
-    conn.on('close',()=>status('Disconnected from host. Reload to rejoin.'))})}
-function act(a){if(mode==='guest')return conn&&conn.send({t:'act',a});a.t==='choose'?M.choose(ds,a.k):M.move(ds,a.key)}
-
+const rid=()=>Math.random().toString(36).slice(2,10);
+async function join(){
+  const code=$('code').value.toUpperCase().trim();if(!code)return;
+  if(!NET)return status('Your browser does not support online play.');
+  mode='guest';status('Connecting…');
+  try{
+    if(!(await FB('GET',`rooms/${code}/lobby`)))return status('No room with that code. Check the code, and make sure the host still has the page open.');
+    room=code;cid=rid();let seat=null,lastSeen=Date.now(),sawPlay=false;
+    await FB('PUT',`rooms/${room}/hello/${cid}`,{name:($('name').value||'Guest').slice(0,16)});
+    stream(`rooms/${room}/assign/${cid}`,t=>{if(typeof t!=='number'||seat!==null)return;
+      if(t<0){status('You were removed from the room (it may be full).');stopAll();return}
+      seat=t;$('home').hidden=true;status('Connected as seat '+(t+1)+'. Waiting for the host to start…');
+      stream(`rooms/${room}/views/${seat}`,v=>{if(typeof v==='string')render(JSON.parse(v),false)});
+      let n=0;timers.push(setInterval(()=>FB('PUT',`rooms/${room}/beat/${cid}`,++n).catch(()=>{}),5000))});
+    stream(`rooms/${room}/lobby`,t=>{lastSeen=Date.now();
+      if(t===null){status('The host closed the room.');return}
+      if(t&&t.n&&!sawPlay&&$('game').hidden)status('Players: '+JSON.parse(t.n).join(', '));
+      if(t&&t.playing)sawPlay=true;
+      else if(t&&sawPlay){sawPlay=false;$('game').hidden=true;$('lobby').hidden=false;status('The host cancelled the game. Waiting for a new one…')}});
+    timers.push(setInterval(()=>{if(Date.now()-lastSeen>20000)status('The host seems to be offline.')},5000));
+  }catch(e){status('Network error. Check your connection and try again. ('+e.message+')')}}
+function act(a){if(mode==='guest')return FB('POST',`rooms/${room}/acts`,{cid,s:JSON.stringify(a)}).catch(()=>status('Network error while sending your move.'));
+  a.t==='choose'?M.choose(ds,a.k):M.move(ds,a.key)}
 function quit(){
   if(mode==='guest'){if(!confirm('Leave this game? A bot will take your seat.'))return;
-    try{conn.close();peer.destroy()}catch(e){}
-    conn=null;peer=null;mode='';$('game').hidden=true;$('lobby').hidden=false;$('home').hidden=false;status('You left the game.');return}
+    stopAll();FB('DELETE',`rooms/${room}/hello/${cid}`).catch(()=>{});
+    mode='';room='';$('game').hidden=true;$('lobby').hidden=false;$('home').hidden=false;status('You left the game.');return}
   if(!confirm('Cancel the game for everyone?'))return;
   clearTimeout(M.t);clearTimeout(M.t2);M=null;gate=false;
-  seats.forEach(s=>{if(s.conn)try{s.conn.send({t:'cancel'})}catch(e){}});
   $('game').hidden=true;$('gate').hidden=true;$('lobby').hidden=false;lobbyPush();
   status('Game cancelled. Adjust the seats and press Start for a new one.')}
+addEventListener('beforeunload',()=>{ // best-effort cleanup
+  if(room&&mode==='host')fetch(`${DB}/rooms/${room}.json`,{method:'DELETE',keepalive:true});
+  else if(room&&mode==='guest')fetch(`${DB}/rooms/${room}/hello/${cid}.json`,{method:'DELETE',keepalive:true})});
 
 // ===== RENDER =====
 function render(v,g){
@@ -255,9 +307,9 @@ $('pick').onclick=e=>{const k=e.target.dataset.k;if(k)act({t:'choose',k})};
 $('hand').onclick=e=>{const b=e.target.closest('[data-k]');if(b&&!b.disabled)act({t:'play',key:b.dataset.k})};
 
 // ===== LOBBY WIRING =====
-$('bh').onclick=()=>{if(!NET)return status('Online play needs the PeerJS script, which is blocked in this preview. Use it from GitHub Pages.');mode='host';mkSeats();hostNet();showCfg()};
+$('bh').onclick=()=>{if(!NET)return status('Online play is not supported in this browser.');mode='host';mkSeats();hostNet();showCfg()};
 $('bl').onclick=()=>{mode='host';peer=null;mkSeats();showCfg()};
 $('quit').onclick=quit;$('pass').onclick=()=>act({t:'play',key:null});$('bj').onclick=join;$('bs').onclick=start;
 if(location.hash.length>1)$('code').value=location.hash.slice(1);
-if(!NET)status('Online play is unavailable here (PeerJS not loaded). Local play still works.');
+if(!NET)status('Online play is not supported in this browser. Local play still works.');
 </script></main></body></html>
