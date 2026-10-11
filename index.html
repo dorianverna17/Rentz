@@ -7,7 +7,7 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181a;--fg:#eee;--mut:#9a9aa0;--line:#333;--acc:#6fcf9f;--on:#111;--hi:#1f2a24;--rd:#ff7b6b}}
 :root[data-theme="dark"]{--bg:#17181a;--fg:#eee;--mut:#9a9aa0;--line:#333;--acc:#6fcf9f;--on:#111;--hi:#1f2a24;--rd:#ff7b6b}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;-webkit-text-size-adjust:100%;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 main{max-width:640px;margin:0 auto;padding:14px}
 h1{font-size:20px;margin:0 0 6px}.s{color:var(--mut)}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
@@ -23,8 +23,8 @@ tr.sel{background:var(--hi);font-weight:600}
 .c b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:400}
 button.c:disabled{opacity:.5;filter:grayscale(.4)}
 button.c:not(:disabled){border:2px solid var(--acc);cursor:pointer;transition:transform .1s}
-button.c:not(:disabled):hover{transform:translateY(-6px)}
-#hand{padding-top:8px}
+@media (hover:hover){button.c:not(:disabled):hover{transform:translateY(-6px)}}
+
 .row{display:flex;align-items:center;padding-right:20px;margin:2px 0}
 #tbl .c{width:40px;height:56px;font-size:11px;margin:2px}#tbl .c b{font-size:22px}#tbl .c i{left:3px;top:3px}#tbl .c i.br{left:auto;top:auto;right:3px;bottom:3px}
 .row .c{margin-right:-20px}
@@ -34,9 +34,41 @@ button.c:not(:disabled):hover{transform:translateY(-6px)}
 #tbl{min-height:96px;background:var(--hi);border-radius:10px;padding:8px;margin:8px 0}
 #gate{position:fixed;inset:0;background:var(--bg);z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 #gate[hidden]{display:none}
+/* ---- phone friendly ---- */
+input,select{font-size:16px;min-height:44px}
+.b{min-height:44px;font-size:16px;padding:10px 16px}
+#pick .b{flex:1 1 calc(50% - 10px)}
+#dock{position:sticky;bottom:0;z-index:5;background:var(--bg);border-top:1px solid var(--line);margin:0 -14px;padding:6px 14px calc(8px + env(safe-area-inset-bottom,0px))}
+#dock p{margin:4px 0}#dock .bar{margin:6px 0 0;justify-content:center}
+#hand{display:flex;justify-content:center;padding:16px 0 2px;--w:clamp(48px,14vw,68px);--av:calc(min(100vw,640px) - 28px);--ov:max(0px,calc(var(--w) - (var(--av) - var(--w))/7))}
+#hand .c{flex:0 0 auto;width:var(--w);height:calc(var(--w)*1.42);font-size:calc(var(--w)*.27);margin:0 0 0 calc(var(--ov)*-1)}
+#hand .c:first-child{margin-left:0}
+#hand .c b{font-size:calc(var(--w)*.58)}
+#hand button.c:not(:disabled){transform:translateY(-10px)}
+@media (max-height:480px) and (orientation:landscape){#hand{--w:clamp(40px,7vw,52px)}#tbl{min-height:0}}
+/* ---- old-school card table theme (felt, brass, wood) ---- */
+:root:root:root{--bg:#1b4d36;--fg:#f4ecd8;--mut:#bcd3c0;--line:rgba(244,236,216,.28);--acc:#d4a73c;--on:#2a1c05;--hi:rgba(212,167,60,.2);color-scheme:dark}
+html{min-height:100%;background-color:#1b4d36;background-image:radial-gradient(ellipse at 50% 25%,rgba(255,255,255,.13),rgba(0,0,0,.5) 90%),url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='.55'/></svg>")}
+body{background:transparent;min-height:100vh}
+h1{font:700 24px/1.2 Georgia,'Palatino Linotype',serif;letter-spacing:.14em;text-transform:uppercase;text-align:center;color:#ebc968;text-shadow:0 2px 0 rgba(0,0,0,.45);margin:4px 0 12px;padding-bottom:8px;border-bottom:1px solid rgba(212,167,60,.5)}
+#hdr{font-family:Georgia,'Palatino Linotype',serif}
+.b{background:linear-gradient(#ecca62,#c79a2c);color:#2a1c05;font-family:Georgia,'Palatino Linotype',serif;font-weight:700;letter-spacing:.03em;box-shadow:0 2px 0 #7a5a12,0 4px 8px rgba(0,0,0,.4)}
+.b:active{transform:translateY(1px);box-shadow:0 1px 0 #7a5a12}
+.b.g{background:rgba(0,0,0,.25);color:var(--fg);border:1px solid var(--line);box-shadow:none}
+input,select{background:rgba(0,0,0,.3);color:var(--fg);border:1px solid var(--line)}
+table#sc{background:rgba(0,0,0,.28);border-radius:10px;overflow:hidden;border:1px solid rgba(212,167,60,.4)}
+th{font-family:Georgia,serif;color:#ebc968;font-weight:600}
+#tbl{background:radial-gradient(ellipse at center,rgba(255,255,255,.07),rgba(0,0,0,.3));border:2px solid rgba(212,167,60,.55);box-shadow:inset 0 0 36px rgba(0,0,0,.45),0 2px 6px rgba(0,0,0,.3)}
+#dock{background:repeating-linear-gradient(90deg,#5b3a1c 0 4px,#4d3017 4px 9px,#573719 9px 12px);border-top:3px solid #2e1b0b;box-shadow:0 -4px 12px rgba(0,0,0,.45)}
+#dock p{text-shadow:0 1px 0 rgba(0,0,0,.5)}
+.c{background:linear-gradient(#fffdf4,#f3ead3);border-color:#b8ab88;color:#1a1a1a}
+.c.rd{color:#b3262b}
+#gate{background:radial-gradient(ellipse at center,#25613f,#102f20)}
+button.c:disabled{opacity:1;filter:brightness(.6) saturate(.7)}
 </style>
+<script src="bots.js"></script>
 </head><body><main>
-<h1>Rentz</h1>
+<h1>♠ Rentz ♥</h1>
 <div id="lobby">
  <div id="home"><p class="s">4 players, 32 cards. Mix humans (same device or online) with bots.</p>
   <div class="bar">Name <input id="name" placeholder="Your name" maxlength="16"></div>
@@ -48,19 +80,19 @@ button.c:not(:disabled):hover{transform:translateY(-6px)}
  <p id="status" class="s"></p></div>
 <div id="game" hidden>
  <div id="hdr"></div><table id="sc"></table><div id="tbl"></div><div id="pick"></div>
- <p id="msg"></p><div id="hand"></div><div class="bar"><button class="b" id="pass" disabled>Pass</button></div><div id="again"></div><div class="bar"><button class="b g" id="quit"></button></div></div>
+ <div id="dock"><p id="msg"></p><div id="hand"></div><div class="bar"><button class="b" id="pass" disabled>Pass</button></div></div><div id="again"></div><div class="bar"><button class="b g" id="quit"></button></div></div>
 <div id="gate" hidden></div>
 <script>
 // ===== ENGINE (no DOM dependency) =====
 const SUITS=['♣','♦','♥','♠'],RL={11:'J',12:'Q',13:'K',14:'A'};
 const cs=c=>(RL[c.r]||c.r)+SUITS[c.s];
 // Default scoring – tweak to match your house rules.
-const SC={kingHearts:-40,queens:-5,diamonds:-5,tenClubs:-20,tricks:-5,whist:10,rentz:[60,30,10,0]};
+const SC={kingHearts:-40,queens:-5,diamonds:-5,tenClubs:20,tricks:-5,whist:10,rentz:[60,30,10,0]};
 // Single-card contracts end as soon as the card is taken.
 const STOP={kingHearts:c=>c.r===13&&c.s===2,tenClubs:c=>c.r===10&&c.s===0};
 const CONTRACTS=['kingHearts','queens','diamonds','tenClubs','tricks','totals','whist','rentz'];
 const NAMES={kingHearts:'King of Hearts',queens:'Queens',diamonds:'Diamonds',tenClubs:'10 of Clubs',tricks:'Tricks',totals:'Totals',whist:'Whist (+)',rentz:'Rentz (+)'};
-const EXPECT={kingHearts:-40,queens:-20,diamonds:-40,tenClubs:-20,tricks:-40,totals:-160,whist:80,rentz:100}; // per-deal score sums
+const EXPECT={kingHearts:-40,queens:-20,diamonds:-40,tenClubs:20,tricks:-40,totals:-120,whist:80,rentz:100}; // per-deal score sums
 function rng(seed){let a=seed>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function deck(){const d=[];for(let s=0;s<4;s++)for(let r=7;r<=14;r++)d.push({s,r});return d}
 function shuffle(a,R){for(let i=a.length-1;i>0;i--){const j=Math.floor(R()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -85,7 +117,10 @@ class Deal{
     return f.length?f:h.slice();                      // must follow suit, no trumps
   }
   obs(){return{me:this.turn,contract:this.k,hand:this.hands[this.turn].slice(),
-    trick:this.trick&&this.trick.map(t=>({p:t.p,c:t.c})),layout:this.layout,open:this.open}}
+    trick:this.trick&&this.trick.map(t=>({p:t.p,c:t.c})),layout:this.layout,open:this.open,sizes:this.hands.map(h=>h.length),played:this.played()}}
+  played(){ // every card already played (public information)
+    if(this.rentz)return Object.entries(this.layout).flatMap(([s,L])=>{const a=[];for(let r=L.lo;r<=L.hi;r++)a.push({s:+s,r});return a});
+    return this.won.flat().concat(this.trick.map(t=>t.c))}
   play(c){
     const p=this.turn,h=this.hands[p];
     if(c)h.splice(h.indexOf(c),1);
@@ -130,6 +165,7 @@ const randomBot={
 };
 
 
+const BOT=typeof smartBot!=='undefined'?smartBot:randomBot; // bots.js provides smartBot
 // ===== MATCH (host-authoritative; runs on the host's device) =====
 const $=id=>document.getElementById(id),ck=c=>c.s+'-'+c.r,red=c=>c.s===1||c.s===2;
 const face=c=>{const r=RL[c.r]||c.r,x=SUITS[c.s];return`<i>${r}<br>${x}</i><b>${x}</b><i class="br">${r}<br>${x}</i>`};
@@ -145,9 +181,9 @@ class Match{
   sched(delay=700){clearTimeout(this.t);if(this.phase==='over'||this.phase==='dealover')return;
     const auto=this.seats[this.actor()].type==='bot'; // bots pass by themselves; humans press Pass
     if(auto)this.t=setTimeout(()=>this.auto(),delay)}
-  auto(){const a=this.actor();
-    if(this.phase==='choose')return this.choose(a,randomBot.choose(this.left[a],this.R));
-    const l=this.g.legal();this.move(a,l[0]===null?null:ck(randomBot.move(this.g.obs(),l,this.R)))}
+  auto(){const a=this.actor(),B=this.seats[a].bot||BOT;
+    if(this.phase==='choose')return this.choose(a,B.choose(this.left[a],this.R,{hand:this.hands[a],tot:this.tot,seat:a}));
+    const l=this.g.legal();this.move(a,l[0]===null?null:ck(B.move(this.g.obs(),l,this.R)))}
   choose(s,k){if(this.phase!=='choose'||s!==this.caller||!this.left[s].includes(k))return;
     this.left[s].splice(this.left[s].indexOf(k),1);this.g=new Deal(k,this.caller,this.hands);this.phase='play';this.cb();this.sched()}
   move(s,kk){if(this.phase!=='play'||this.g.turn!==s)return;const g=this.g,l=g.legal();let c=null;
