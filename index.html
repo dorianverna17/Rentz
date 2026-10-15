@@ -65,6 +65,7 @@ th{font-family:Georgia,serif;color:#ebc968;font-weight:600}
 .c.rd{color:#b3262b}
 #gate{background:radial-gradient(ellipse at center,#25613f,#102f20)}
 button.c:disabled{opacity:1;filter:brightness(.6) saturate(.7)}
+#hlist details{background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:8px 12px}#hlist summary{cursor:pointer}#hlist table{font-size:14px;margin:8px 0 2px}
 </style>
 <script src="bots.js"></script>
 </head><body><main>
@@ -73,7 +74,9 @@ button.c:disabled{opacity:1;filter:brightness(.6) saturate(.7)}
  <div id="home"><p class="s">4 players, 32 cards. Mix humans (same device or online) with bots.</p>
   <div class="bar">Name <input id="name" placeholder="Your name" maxlength="16"></div>
   <div class="bar"><button class="b" id="bh">Host online game</button><button class="b" id="bl">Play locally / vs bots</button></div>
-  <div class="bar">Join code <input id="code" size="8"><button class="b" id="bj">Join</button></div></div>
+  <div class="bar">Join code <input id="code" size="8"><button class="b" id="bj">Join</button></div>
+  <div class="bar"><button class="b g" id="bhist">Match history</button></div></div>
+ <div id="hist" hidden><div class="bar"><button class="b g" id="hback">Back</button></div><div id="hlist"></div></div>
  <div id="cfg" hidden><div id="share" class="s"></div><div id="seatsel"></div>
   <div class="bar">Deals <select id="nd"><option value="8">8 (short)</option><option value="32">32 (full)</option></select><button class="b" id="bs">Start</button></div>
   <p class="s">Open online seats left empty are filled by bots, and a seat can be taken over by a player who joins later.</p></div>
@@ -205,11 +208,12 @@ class Match{
 }
 
 // ===== NETWORK / SESSION =====
+const clean=t=>String(t).replace(/[<>&"'`\\]/g,'').trim().slice(0,16)||'Player';
 const DB='https://verian-5bbb7-default-rtdb.europe-west1.firebasedatabase.app';
 const NET=typeof EventSource!=='undefined'&&typeof fetch!=='undefined';
 let M=null,seats=[],peer=null,conn=null,mode='',ds=0,gate=false;
 const status=t=>$('status').textContent=t;
-const mkSeats=()=>{seats=[{kind:'host',name:($('name').value||'Host').slice(0,16)},...[1,2,3].map(i=>({kind:'bot',name:'Player '+(i+1)}))]};
+const mkSeats=()=>{seats=[{kind:'host',name:clean($('name').value||'Host')},...[1,2,3].map(i=>({kind:'bot',name:'Player '+(i+1)}))]};
 function showCfg(){$('home').hidden=true;$('cfg').hidden=false;lobbyUI()}
 function lobbyUI(){
   $('seatsel').innerHTML=seats.map((s,i)=>i===0?`<div>Seat 1: ${s.name} (you)</div>`:
@@ -218,7 +222,7 @@ function lobbyUI(){
     sel.onchange=()=>{s.kind=sel.value;s.name='Player '+(+sel.dataset.i+1);if(s.kind!=='remote'&&s.conn){const c=s.conn;s.conn=null;c.close()}lobbyPush()}})}
 // Online play: the host's browser runs the game; moves travel through Firebase Realtime Database (REST + EventSource, no SDK).
 // Every value is stored as a JSON string so Firebase cannot drop nulls or empty arrays.
-const FB=(m,p,b)=>fetch(`${DB}/${p}.json`,{method:m,body:b===undefined?undefined:JSON.stringify(b)}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()});
+const FB=(m,p,b,q='')=>fetch(`${DB}/${p}.json${q}`,{method:m,body:b===undefined?undefined:JSON.stringify(b)}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()});
 const Q={},fbq=(p,b)=>Q[p]=(Q[p]||Promise.resolve()).catch(()=>{}).then(()=>FB('PUT',p,b)); // per-path queue keeps writes in order
 let room='',cid='',streams=[],timers=[],clients={},known={},bt={};
 const stopAll=()=>{streams.forEach(e=>e.close());timers.forEach(clearInterval);streams=[];timers=[]};
@@ -254,7 +258,7 @@ async function hostNet(){
     $('share').innerHTML=`Room code <b>${code}</b> · invite link <input readonly size="34" value="${location.href.split('#')[0]}#${code}" onclick="this.select()">`;
     lobbyPush();
     stream(`rooms/${room}/hello`,t=>{const cur=t&&typeof t==='object'?t:{};
-      for(const[id,v]of Object.entries(cur))if(!known[id]){known[id]=1;onHello(id,String((v&&v.name)||'Player').slice(0,16))}
+      for(const[id,v]of Object.entries(cur))if(!known[id]){known[id]=1;onHello(id,clean((v&&v.name)||'Player'))}
       for(const id of Object.keys(known))if(!(id in cur)){delete known[id];if(clients[id])hostGone(clients[id])}});
     const done={};
     stream(`rooms/${room}/acts`,t=>{if(!t||typeof t!=='object')return;
@@ -277,7 +281,8 @@ function push(){
   const locals=seats.map((s,i)=>i).filter(i=>isLocal(i)&&M.seats[i].type==='human');
   const a=M.phase==='choose'?M.caller:(M.g&&M.phase==='play'?M.g.turn:null);
   if(a!==null&&locals.includes(a)&&a!==ds){gate=locals.length>1;ds=a}
-  render(M.view(ds),gate)}
+  render(M.view(ds),gate);
+  if(M.phase==='over'&&!M.saved){M.saved=true;saveHistory()}}
 const rid=()=>Math.random().toString(36).slice(2,10);
 async function join(){
   const code=$('code').value.toUpperCase().trim();if(!code)return;
@@ -309,6 +314,22 @@ function quit(){
   clearTimeout(M.t);clearTimeout(M.t2);M=null;gate=false;
   $('game').hidden=true;$('gate').hidden=true;$('lobby').hidden=false;lobbyPush();
   status('Game cancelled. Adjust the seats and press Start for a new one.')}
+// ===== MATCH HISTORY (stored under /history in the database; one write-once record per finished match) =====
+function saveHistory(){if(!NET||!M)return;
+  FB('POST','history',{t:Date.now(),n:M.n,online:!!room,names:JSON.stringify(M.seats.map(x=>x.name)),tot:JSON.stringify(M.tot),
+    deals:JSON.stringify(M.hist.map((h,i)=>({c:i%4,k:h.k,s:h.s})))}).catch(()=>{})}
+const esc=t=>String(t).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+async function showHist(){
+  $('home').hidden=true;$('hist').hidden=false;const L=$('hlist');L.textContent='Loading…';
+  try{const d=(await FB('GET','history',undefined,'?orderBy=%22%24key%22&limitToLast=20'))||{};
+    const rows=Object.values(d).filter(r=>r&&r.t).sort((a,b)=>b.t-a.t);
+    if(!rows.length){L.textContent='No matches saved yet. Finished matches are saved here automatically.';return}
+    L.innerHTML=rows.map(r=>{try{const N=JSON.parse(r.names),tot=JSON.parse(r.tot),D=JSON.parse(r.deals||'[]'),mx=Math.max(...tot);
+      const win=N.filter((n,i)=>tot[i]===mx).map(esc).join(' & ');
+      return`<details><summary>${esc(new Date(r.t).toLocaleString())} · <b>${win}</b> won · ${r.online?'online':'local'} · ${esc(r.n)} deals</summary><table><tr><th>#<th>Contract${N.map(n=>`<th>${esc(n)}`).join('')}</tr>`+
+        D.map((x,i)=>`<tr><td>${i+1}<td>${esc(NAMES[x.k]||x.k)}${x.s.map(v=>`<td>${esc(v)}`).join('')}`).join('')+
+        `<tr><th colspan="2">Total${tot.map(v=>`<th>${esc(v)}`).join('')}</tr></table></details>`}catch(e){return''}}).join('')
+  }catch(e){L.textContent='Could not load history ('+e.message+'). If it says HTTP 401, update the Firebase rules.'}}
 addEventListener('beforeunload',()=>{ // best-effort cleanup
   if(room&&mode==='host')fetch(`${DB}/rooms/${room}.json`,{method:'DELETE',keepalive:true});
   else if(room&&mode==='guest')fetch(`${DB}/rooms/${room}/hello/${cid}.json`,{method:'DELETE',keepalive:true})});
@@ -345,7 +366,7 @@ $('hand').onclick=e=>{const b=e.target.closest('[data-k]');if(b&&!b.disabled)act
 // ===== LOBBY WIRING =====
 $('bh').onclick=()=>{if(!NET)return status('Online play is not supported in this browser.');mode='host';mkSeats();hostNet();showCfg()};
 $('bl').onclick=()=>{mode='host';peer=null;mkSeats();showCfg()};
-$('quit').onclick=quit;$('pass').onclick=()=>act({t:'play',key:null});$('bj').onclick=join;$('bs').onclick=start;
+$('quit').onclick=quit;$('pass').onclick=()=>act({t:'play',key:null});$('bhist').onclick=showHist;$('hback').onclick=()=>{$('hist').hidden=true;$('home').hidden=false};$('bj').onclick=join;$('bs').onclick=start;
 if(location.hash.length>1)$('code').value=location.hash.slice(1);
 if(!NET)status('Online play is not supported in this browser. Local play still works.');
 </script></main></body></html>
